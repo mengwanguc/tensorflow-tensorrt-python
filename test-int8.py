@@ -1,3 +1,7 @@
+from tensorflow.python.client import session as csess
+from tensorflow.python.framework import importer as importer
+from tensorflow.python.framework import ops as ops
+from tensorflow.core.protobuf import config_pb2 as cpb2
 import time
 import tensorflow as tf
 from tensorflow.contrib import tensorrt as trt
@@ -93,7 +97,36 @@ trt_graph_def = trt.create_inference_graph(
   max_batch_size=batch_size,
   max_workspace_size_bytes=workspace_size_bytes,
   precision_mode=precision_mode)
-#trt_graph_def=trt.calib_graph_to_infer_graph(trt_graph_def) # For only 'INT8'
+
+
+# Use real data that is representative of the inference dataset
+# for calibration. For this test script it is random data.
+def run_calibration(gdef, dumm_inp):
+  """Run given calibration graph multiple times."""
+  gpu_options = None
+  if trt.trt_convert.get_linked_tensorrt_version()[0] == 3:
+    gpu_options = cpb2.GPUOptions(per_process_gpu_memory_fraction=0.50)
+  ops.reset_default_graph()
+  gx = ops.Graph()
+  with gx.as_default():
+    inp, out = importer.import_graph_def(
+        graph_def=gdef, return_elements=['input:0', 'resnet_v1_50/predictions/Reshape_1:0'])
+    #inp = inp.outputs[0]
+    #out = out.outputs[0]
+  with csess.Session(
+      config=cpb2.ConfigProto(gpu_options=gpu_options), graph=gx) as sess:
+    # run over real calibration data here, we are mimicking a calibration set of
+    # 30 different batches. Use as much calibration data as you want
+    for _ in range(10):
+      val = sess.run(out, {inp: dumm_inp})
+  return val
+
+
+
+
+
+_ = run_calibration(trt_graph_def, image1)
+trt_graph_def=trt.calib_graph_to_infer_graph(trt_graph_def) # For only 'INT8'
 print('Generated TensorRT graph def')
  
 #
