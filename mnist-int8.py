@@ -1,3 +1,8 @@
+from tensorflow.python.client import session as csess
+from tensorflow.python.framework import importer as importer
+from tensorflow.python.framework import ops as ops
+from tensorflow.core.protobuf import config_pb2 as cpb2
+
 import numpy as np
 import time
 import tensorflow as tf
@@ -9,7 +14,7 @@ from tensorflow.contrib import tensorrt as trt
 #
 batch_size = 128
 workspace_size_bytes = 1 << 30
-precision_mode = 'FP32' # use 'FP32' for K80
+precision_mode = 'INT8' # use 'FP32' for K80
 trt_gpu_ops = tf.GPUOptions(per_process_gpu_memory_fraction = 0.50)
  
 #
@@ -43,6 +48,42 @@ trt_graph_def = trt.create_inference_graph(
   max_batch_size=batch_size,
   max_workspace_size_bytes=workspace_size_bytes,
   precision_mode=precision_mode)
+
+
+
+# Use real data that is representative of the inference dataset
+# for calibration. For this test script it is random data.
+def run_calibration(gdef, dumm_inp):
+  """Run given calibration graph multiple times."""
+  gpu_options = None
+  if trt.trt_convert.get_linked_tensorrt_version()[0] == 3:
+    gpu_options = cpb2.GPUOptions(per_process_gpu_memory_fraction=0.50)
+  ops.reset_default_graph()
+  gx = ops.Graph()
+  with gx.as_default():
+    inp, out = importer.import_graph_def(
+        graph_def=gdef, return_elements=['x:0', 'output:0'])
+    #inp = inp.outputs[0]
+    #out = out.outputs[0]
+  with csess.Session(
+      config=cpb2.ConfigProto(gpu_options=gpu_options), graph=gx) as sess:
+    # run over real calibration data here, we are mimicking a calibration set of
+    # 30 different batches. Use as much calibration data as you want
+    for j in range(200):
+      val = sess.run(out, {inp: [dumm_inp[j]]})
+  return val
+
+
+
+mnist__train, temppp = tf.keras.datasets.mnist.load_data()
+imagesss, labels = mnist__train[0], mnist__train[1]
+imagesss = imagesss.astype('float32')
+imagesss /= 255.0
+imagesss = np.reshape(imagesss, [60000, 28, 28, 1])
+
+_ = run_calibration(trt_graph_def, imagesss)
+trt_graph_def=trt.calib_graph_to_infer_graph(trt_graph_def) # For only 'INT8'
+
 #trt_graph_def=trt.calib_graph_to_infer_graph(trt_graph_def) # For only 'INT8'
 print('Generated TensorRT graph def')
  

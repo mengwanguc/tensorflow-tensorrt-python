@@ -9,7 +9,7 @@ from tensorflow.contrib import tensorrt as trt
 #
 batch_size = 128
 workspace_size_bytes = 1 << 30
-precision_mode = 'FP32' # use 'FP32' for K80
+precision_mode = 'FP16' # use 'FP32' for K80
 trt_gpu_ops = tf.GPUOptions(per_process_gpu_memory_fraction = 0.50)
  
 #
